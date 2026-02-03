@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const ConnectionHandler = require('./connectionHandler');
 const RoomManager = require('./roomManager');
-const MessageRouter = require('../webrtc-signaling/messageRouter');
+const MessageRouter = require('./messageRouter');
 
 const PORT = process.env.PORT || 8080;
 
