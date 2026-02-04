@@ -1,0 +1,11 @@
+# Firebase secret keys
+serviceAccountKey.json
+
+# Environment variables
+.env
+
+# Dependencies
+node_modules/
+
+# Local test files
+index.html

@@ -1,41 +1,55 @@
-const { v4: uuidv4 } = require('uuid');
-
 class ConnectionHandler {
-  constructor(rooms, roomManager, messageRouter) {
-    this.rooms = rooms;
+  constructor(db, roomManager, messageRouter) {
+    this.db = db;
     this.roomManager = roomManager;
     this.messageRouter = messageRouter;
   }
 
   handleConnection(socket) {
-    const userId = uuidv4();
-    socket.userId = userId;
-
-    console.log(`👤 User connected: ${userId}`);
-
-    // Send welcome
-    socket.send(JSON.stringify({ type: 'welcome', userId }));
-    console.log(`➡️ Sent welcome to ${userId}`);
+    console.log('👤 New raw connection established');
 
     socket.on('message', (data) => {
-      console.log(`📩 Message from ${userId}:`, data.toString());
-
       try {
         const message = JSON.parse(data);
-        this.messageRouter.routeMessage(socket, message);
+
+        // 1. Listen for the 'join' message which contains the real UID
+        if (message.type === 'join') {
+          const { userId, roomId } = message;
+
+          if (!userId || !roomId) {
+            socket.send(JSON.stringify({ type: 'error', message: 'Missing userId or roomId' }));
+            return;
+          }
+
+          // Attach the real Firebase UID to this socket
+          socket.userId = userId;
+          console.log(`✅ Linked UID: ${userId} to Room: ${roomId}`);
+
+          // Let the RoomManager handle the Firebase logic
+          this.roomManager.joinRoom(socket, roomId);
+
+        } else {
+          // 2. All other messages (offers/answers) are routed normally
+          if (!socket.userId) {
+            socket.send(JSON.stringify({ type: 'error', message: 'Must join room before signaling' }));
+            return;
+          }
+          this.messageRouter.handleMessage(socket, message);
+        }
       } catch (err) {
-        console.error('❌ Invalid JSON from', userId);
-        socket.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+        console.error('❌ Invalid JSON received:', err.message);
       }
     });
 
     socket.on('close', () => {
-      console.log(`👋 User disconnected: ${userId}`);
-      this.roomManager.handleDisconnect(socket);
+      if (socket.userId) {
+        console.log(`👋 User ${socket.userId} disconnected`);
+        this.roomManager.handleDisconnect(socket);
+      }
     });
 
     socket.on('error', (err) => {
-      console.error(`❌ Socket error (${userId}):`, err.message);
+      console.error(`❌ Socket error:`, err.message);
       this.roomManager.handleDisconnect(socket);
     });
   }
