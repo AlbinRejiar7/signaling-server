@@ -72,28 +72,35 @@ class RoomManager {
     }
   }
 
-  leaveRoom(socket) {
+leaveRoom(socket) {
     const userId = socket.userId;
 
     for (const roomId in this.activeConnections) {
       const roomConnections = this.activeConnections[roomId];
 
       if (roomConnections[userId]) {
+  
         delete roomConnections[userId];
-        
-        // Remove user from Firebase participants so the room doesn't stay "full"
         this.db.ref(`rooms/${roomId}/participants/${userId}`).remove();
 
         console.log(`👋 User ${userId} stopped signaling for room ${roomId}`);
+        
+        
         this.broadcastToRoom(roomId, { type: 'userLeft', userId });
 
         if (Object.keys(roomConnections).length === 0) {
+          console.log(`🗑️ Room ${roomId} is empty. Deleting from Firebase...`);
+          
+     
+          this.db.ref(`rooms/${roomId}`).remove(); 
+          
+          // Clear it from server memory
           delete this.activeConnections[roomId];
         }
         break;
       }
     }
-  }
+}
 
   handleDisconnect(socket) {
     this.leaveRoom(socket);
