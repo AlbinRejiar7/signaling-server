@@ -12,57 +12,58 @@ class ConnectionHandler {
       try {
         const message = JSON.parse(data);
 
-        // 1. Listen for the 'join' message with the new model fields
+        // 1. Handshake: Setup the session
         if (message.type === 'join') {
-          // Destructure name and isHost from the message sent by Flutter
           const { userId, roomId, name, isHost } = message;
 
           if (!userId || !roomId) {
-            socket.send(JSON.stringify({ 
-              type: 'error', 
-              message: 'Missing userId or roomId' 
-            }));
-            return;
+            return socket.send(JSON.stringify({ type: 'error', message: 'Missing userId or roomId' }));
           }
 
-          // Attach the real Firebase UID to this socket for future reference
+          // SECURITY: Permanently link this specific socket to this UID and Room
           socket.userId = userId;
-          console.log(`✅ Linked UID: ${userId} (${name}) to Room: ${roomId}`);
+          socket.currentRoomId = roomId; 
+          
+          console.log(`✅ Session Linked: ${userId} joined Room: ${roomId}`);
 
-          // 2. Pass the extra info (userData) to RoomManager
-          // This allows RoomManager to build the participant object correctly
+          // Initialize persistent data (Firebase)
           this.roomManager.joinRoom(socket, roomId, { name, isHost });
 
         } else {
-          // 3. Routing signaling messages (offers/answers/candidates)
-          if (!socket.userId) {
-            socket.send(JSON.stringify({ 
-              type: 'error', 
-              message: 'Must join room before signaling' 
-            }));
-            return;
+          // 2. Routing: Only allow messages if joined
+          if (!socket.userId || !socket.currentRoomId) {
+            return socket.send(JSON.stringify({ type: 'error', message: 'Not authorized: Join a room first' }));
           }
           
-          // Pass the message to the router to find the target recipient
+          // FORCED SECURITY: Overwrite any roomId in the message with the socket's verified ID
+          // This prevents "spoofing" messages to other rooms.
+          message.roomId = socket.currentRoomId;
+
+          // Pass to Router (Handles WebRTC signals AND updateVoiceStatus)
           this.messageRouter.handleMessage(socket, message);
         }
       } catch (err) {
-        console.error('❌ Invalid JSON received:', err.message);
+        console.error('❌ JSON Processing Error:', err.message);
       }
     });
 
-    socket.on('close', () => {
-      if (socket.userId) {
-        console.log(`👋 User ${socket.userId} disconnected`);
-        this.roomManager.handleDisconnect(socket);
+    // 3. Robust Cleanup (Handles both accidental and intentional disconnects)
+    const cleanup = () => {
+      if (socket.userId && socket.currentRoomId) {
+        console.log(`👋 User ${socket.userId} disconnected.`);
+        // Remove from Firebase and Notify Peers
+        this.roomManager.leaveRoom(socket);
+        
+        // Clear memory on the socket object
+        socket.userId = null;
+        socket.currentRoomId = null;
       }
-    });
+    };
 
+    socket.on('close', cleanup);
     socket.on('error', (err) => {
       console.error(`❌ Socket error:`, err.message);
-      if (socket.userId) {
-        this.roomManager.handleDisconnect(socket);
-      }
+      cleanup();
     });
   }
 }

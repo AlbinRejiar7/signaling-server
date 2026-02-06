@@ -5,34 +5,40 @@ class MessageRouter {
   }
 
   handleMessage(socket, message) {
+    // Destructure the message. 
+    // Note: roomId is now guaranteed correct by the ConnectionHandler.
     const { type, roomId, targetUserId, ...payload } = message;
     const userId = socket.userId;
 
-    // 1. Safety Check: Access the active connections in memory for this room
+    // 1. Memory Check: Access the active connections for this specific room
     const roomConnections = this.roomManager.activeConnections[roomId];
 
-    // Verify sender is authorized and exists in the room's memory map
+    // Security check: Ensure the room exists and the sender is actually in it
     if (!roomConnections || !roomConnections[userId]) {
-      console.warn(`⚠️ Unauthorized: User ${userId} tried "${type}" in room ${roomId}`);
-      socket.send(JSON.stringify({ type: 'error', message: 'You are not active in this room' }));
-      return;
+      console.warn(`⚠️ Security Block: User ${userId} is not authorized for Room ${roomId}`);
+      return; 
     }
 
     switch (type) {
+      // Broadcast voice/mic status to everyone else in the room
+      case 'updateVoiceStatus':
+        if (payload.updates) {
+          // Pass to RoomManager for optimized (No-Firebase-Speaking) logic
+          this.roomManager.updateVoiceStatus(roomId, userId, payload.updates);
+        }
+        break;
+
       case 'leave':
-        console.log(`🚪 Leave requested: ${userId} from ${roomId}`);
         this.roomManager.leaveRoom(socket);
         break;
 
+      // WebRTC Signaling: Forward message directly to a specific user
       case 'offer':
       case 'answer':
       case 'candidate':
-        // 2. Targeted Routing: Use targetUserId to find the specific recipient's socket
         const targetSocket = roomConnections[targetUserId];
 
-        // Forward the WebRTC signal if the target is online (readyState 1 = OPEN)
         if (targetSocket && targetSocket.readyState === 1) {
-          console.log(`🔁 Signal: ${type} from ${userId} → ${targetUserId}`);
           targetSocket.send(
             JSON.stringify({ 
               type, 
@@ -41,18 +47,16 @@ class MessageRouter {
             })
           );
         } else {
-          // If the target isn't in memory, they likely disconnected or aren't in this room
-          console.warn(`⚠️ Route failed: Target ${targetUserId} not found in room ${roomId}`);
+          console.warn(`⚠️ Signal target ${targetUserId} not found in room ${roomId}`);
           socket.send(JSON.stringify({ 
             type: 'error', 
-            message: 'Target user is offline or not in this room' 
+            message: 'Peer is unreachable' 
           }));
         }
         break;
 
       default:
         console.warn('⚠️ Unknown message type:', type);
-        socket.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
     }
   }
 }
