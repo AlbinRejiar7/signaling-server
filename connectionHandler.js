@@ -12,28 +12,38 @@ class ConnectionHandler {
       try {
         const message = JSON.parse(data);
 
-        // 1. Listen for the 'join' message which contains the real UID
+        // 1. Listen for the 'join' message with the new model fields
         if (message.type === 'join') {
-          const { userId, roomId } = message;
+          // Destructure name and isHost from the message sent by Flutter
+          const { userId, roomId, name, isHost } = message;
 
           if (!userId || !roomId) {
-            socket.send(JSON.stringify({ type: 'error', message: 'Missing userId or roomId' }));
+            socket.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Missing userId or roomId' 
+            }));
             return;
           }
 
-          // Attach the real Firebase UID to this socket
+          // Attach the real Firebase UID to this socket for future reference
           socket.userId = userId;
-          console.log(`✅ Linked UID: ${userId} to Room: ${roomId}`);
+          console.log(`✅ Linked UID: ${userId} (${name}) to Room: ${roomId}`);
 
-          // Let the RoomManager handle the Firebase logic
-          this.roomManager.joinRoom(socket, roomId);
+          // 2. Pass the extra info (userData) to RoomManager
+          // This allows RoomManager to build the participant object correctly
+          this.roomManager.joinRoom(socket, roomId, { name, isHost });
 
         } else {
-          // 2. All other messages (offers/answers) are routed normally
+          // 3. Routing signaling messages (offers/answers/candidates)
           if (!socket.userId) {
-            socket.send(JSON.stringify({ type: 'error', message: 'Must join room before signaling' }));
+            socket.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Must join room before signaling' 
+            }));
             return;
           }
+          
+          // Pass the message to the router to find the target recipient
           this.messageRouter.handleMessage(socket, message);
         }
       } catch (err) {
@@ -50,7 +60,9 @@ class ConnectionHandler {
 
     socket.on('error', (err) => {
       console.error(`❌ Socket error:`, err.message);
-      this.roomManager.handleDisconnect(socket);
+      if (socket.userId) {
+        this.roomManager.handleDisconnect(socket);
+      }
     });
   }
 }
