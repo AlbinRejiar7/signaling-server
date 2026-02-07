@@ -5,17 +5,15 @@ class ConnectionHandler {
     this.messageRouter = messageRouter;
   }
 
-  handleConnection(socket) {
+handleConnection(socket) {
     console.log('👤 New raw connection established');
 
     socket.on('message', (data) => {
       try {
         const message = JSON.parse(data);
 
-        // 1. Handshake: Setup the session
         if (message.type === 'join') {
-          // ADDED: profileImageUrl from the client message
-          const { userId, roomId, name, isHost, profileImageUrl } = message;
+          const { userId, roomId } = message; // ProfileImage, name ellam ignore cheyyaam
 
           if (!userId || !roomId) {
             return socket.send(JSON.stringify({ 
@@ -24,24 +22,19 @@ class ConnectionHandler {
             }));
           }
 
-          // SECURITY: Permanently link this specific socket to this UID and Room
           socket.userId = userId;
           socket.currentRoomId = roomId; 
           
-          console.log(`✅ Session Linked: ${userId} (${name}) joined Room: ${roomId}`);
+          console.log(`✅ Session Linked: ${userId} joined Room: ${roomId}`);
 
-          // Pass the profileImageUrl to the roomManager so it can be saved in Firebase
-          // and broadcasted to other participants.
+          // RoomManager-lekk minimal data mathram pass cheyyunnu
           this.roomManager.joinRoom(socket, roomId, { 
-            name, 
-            isHost, 
-            profileImageUrl: profileImageUrl || "", // Default to empty string if missing
-            isMicActive: false, // Initial mic state as per your model
-            joinedAt: Date.now()
+            userId: userId,
+            isMicActive: true // Default starting state
           });
 
         } else {
-          // 2. Routing logic (Verification)
+          // Routing logic
           if (!socket.userId || !socket.currentRoomId) {
             return socket.send(JSON.stringify({ 
               type: 'error', 
@@ -56,7 +49,6 @@ class ConnectionHandler {
         console.error('❌ JSON Processing Error:', err.message);
       }
     });
-
     // 3. Robust Cleanup
     const cleanup = () => {
       if (socket.userId && socket.currentRoomId) {

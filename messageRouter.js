@@ -5,26 +5,31 @@ class MessageRouter {
   }
 
   handleMessage(socket, message) {
-    // Destructure the message. 
-    // Note: roomId is now guaranteed correct by the ConnectionHandler.
     const { type, roomId, targetUserId, ...payload } = message;
     const userId = socket.userId;
 
-    // 1. Memory Check: Access the active connections for this specific room
     const roomConnections = this.roomManager.activeConnections[roomId];
 
-    // Security check: Ensure the room exists and the sender is actually in it
     if (!roomConnections || !roomConnections[userId]) {
       console.warn(`⚠️ Security Block: User ${userId} is not authorized for Room ${roomId}`);
       return; 
     }
 
     switch (type) {
-      // Broadcast voice/mic status to everyone else in the room
       case 'updateVoiceStatus':
         if (payload.updates) {
-          // Pass to RoomManager for optimized (No-Firebase-Speaking) logic
-          this.roomManager.updateVoiceStatus(roomId, userId, payload.updates);
+          // CLEANUP: isSpeaking server-il store cheyyenda, 
+          // pakshe isMicActive undengil athu mathram filter cheyyanam.
+          const cleanUpdates = {};
+          if (payload.updates.hasOwnProperty('isMicActive')) {
+            cleanUpdates.isMicActive = payload.updates.isMicActive;
+          }
+          if (payload.updates.hasOwnProperty('isSpeaking')) {
+            cleanUpdates.isSpeaking = payload.updates.isSpeaking;
+          }
+
+          // Pass only the necessary updates to RoomManager
+          this.roomManager.updateVoiceStatus(roomId, userId, cleanUpdates);
         }
         break;
 
@@ -32,7 +37,6 @@ class MessageRouter {
         this.roomManager.leaveRoom(socket);
         break;
 
-      // WebRTC Signaling: Forward message directly to a specific user
       case 'offer':
       case 'answer':
       case 'candidate':
@@ -47,7 +51,7 @@ class MessageRouter {
             })
           );
         } else {
-          console.warn(`⚠️ Signal target ${targetUserId} not found in room ${roomId}`);
+          // Peer unreachable error
           socket.send(JSON.stringify({ 
             type: 'error', 
             message: 'Peer is unreachable' 

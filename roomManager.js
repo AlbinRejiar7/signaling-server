@@ -6,7 +6,7 @@ class RoomManager {
     this.userMetadata = {}; 
   }
 
-  async joinRoom(socket, roomId, userData) {
+async joinRoom(socket, roomId, userData) {
     const userId = socket.userId;
     if (!roomId) return;
     socket.currentRoomId = roomId; 
@@ -17,30 +17,29 @@ class RoomManager {
 
       this.activeConnections[roomId][userId] = socket;
       
-      // Store metadata (name, image) in server memory
-      const fullUserData = {
+      // MODIFIED: Only userId and isMicActive
+      const minimalUserData = {
         userId: userId,
-        name: userData.name || "User",
-        profileImageUrl: userData.profileImageUrl || "",
-        isMicActive: true,      
-        joinedAt: Date.now()
+        isMicActive: true
       };
-      this.userMetadata[roomId][userId] = fullUserData;
+      
+      // RAM-ilum Firebase-ilum ippo ithu mathrame pogo
+      this.userMetadata[roomId][userId] = minimalUserData;
 
-      // 1. PERSISTENT: Save join info to Firebase (includes image URL)
-      await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).set(fullUserData);
+      // 1. PERSISTENT: Firebase-lekkum minimal data mathram vidunnu
+      await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).set(minimalUserData);
 
-      // 2. NOTIFY OTHERS: Tell them WHO joined (with name and image)
+      // 2. NOTIFY OTHERS: Baakkiyullavarkkum minimal data ayakkunnu
       this.broadcastToRoom(roomId, { 
         type: 'userJoined', 
-        ...fullUserData 
+        ...minimalUserData 
       }, userId);
 
-      // 3. SEND CURRENT USER LIST BACK: Send full objects, not just IDs
+      // 3. SEND CURRENT USER LIST BACK
       socket.send(JSON.stringify({
         type: 'roomJoined',
         roomId,
-        users: Object.values(this.userMetadata[roomId]), // Sending [{userId, name, profileImageUrl}, ...]
+        users: Object.values(this.userMetadata[roomId]), // [{userId, isMicActive}, ...]
       }));
 
     } catch (error) {
