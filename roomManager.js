@@ -85,10 +85,10 @@ async joinRoom(socket, roomId, userData) {
       await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).remove();
       this.broadcastToRoom(roomId, { type: 'userLeft', userId });
       
-      if (Object.keys(this.activeConnections[roomId]).length === 0) {
-        delete this.activeConnections[roomId];
-        delete this.userMetadata[roomId];
-      }
+      // Optional chaining approach
+if (Object.keys(this.activeConnections[roomId] || {}).length === 0) {
+    delete this.activeConnections[roomId];
+}
     }
   }
 
