@@ -14,32 +14,42 @@ class ConnectionHandler {
 
         // 1. Handshake: Setup the session
         if (message.type === 'join') {
-          const { userId, roomId, name, isHost } = message;
+          // ADDED: profileImageUrl from the client message
+          const { userId, roomId, name, isHost, profileImageUrl } = message;
 
           if (!userId || !roomId) {
-            return socket.send(JSON.stringify({ type: 'error', message: 'Missing userId or roomId' }));
+            return socket.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Missing userId or roomId' 
+            }));
           }
 
           // SECURITY: Permanently link this specific socket to this UID and Room
           socket.userId = userId;
           socket.currentRoomId = roomId; 
           
-          console.log(`✅ Session Linked: ${userId} joined Room: ${roomId}`);
+          console.log(`✅ Session Linked: ${userId} (${name}) joined Room: ${roomId}`);
 
-          // Initialize persistent data (Firebase)
-          this.roomManager.joinRoom(socket, roomId, { name, isHost });
+          // Pass the profileImageUrl to the roomManager so it can be saved in Firebase
+          // and broadcasted to other participants.
+          this.roomManager.joinRoom(socket, roomId, { 
+            name, 
+            isHost, 
+            profileImageUrl: profileImageUrl || "", // Default to empty string if missing
+            isMicActive: false, // Initial mic state as per your model
+            joinedAt: Date.now()
+          });
 
         } else {
-          // 2. Routing: Only allow messages if joined
+          // 2. Routing logic (Verification)
           if (!socket.userId || !socket.currentRoomId) {
-            return socket.send(JSON.stringify({ type: 'error', message: 'Not authorized: Join a room first' }));
+            return socket.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Not authorized: Join a room first' 
+            }));
           }
           
-          // FORCED SECURITY: Overwrite any roomId in the message with the socket's verified ID
-          // This prevents "spoofing" messages to other rooms.
           message.roomId = socket.currentRoomId;
-
-          // Pass to Router (Handles WebRTC signals AND updateVoiceStatus)
           this.messageRouter.handleMessage(socket, message);
         }
       } catch (err) {
@@ -47,14 +57,12 @@ class ConnectionHandler {
       }
     });
 
-    // 3. Robust Cleanup (Handles both accidental and intentional disconnects)
+    // 3. Robust Cleanup
     const cleanup = () => {
       if (socket.userId && socket.currentRoomId) {
         console.log(`👋 User ${socket.userId} disconnected.`);
-        // Remove from Firebase and Notify Peers
         this.roomManager.leaveRoom(socket);
         
-        // Clear memory on the socket object
         socket.userId = null;
         socket.currentRoomId = null;
       }

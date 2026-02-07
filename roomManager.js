@@ -2,6 +2,8 @@ class RoomManager {
   constructor(db) {
     this.db = db;
     this.activeConnections = {}; 
+    // New: Store user metadata in RAM for fast access
+    this.userMetadata = {}; 
   }
 
   async joinRoom(socket, roomId, userData) {
@@ -11,43 +13,53 @@ class RoomManager {
 
     try {
       if (!this.activeConnections[roomId]) this.activeConnections[roomId] = {};
-      this.activeConnections[roomId][userId] = socket;
+      if (!this.userMetadata[roomId]) this.userMetadata[roomId] = {};
 
-      // 1. PERSISTENT: Save basic join info to Firebase
-      await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).set({
+      this.activeConnections[roomId][userId] = socket;
+      
+      // Store metadata (name, image) in server memory
+      const fullUserData = {
         userId: userId,
         name: userData.name || "User",
+        profileImageUrl: userData.profileImageUrl || "",
         isMicActive: true,      
         joinedAt: Date.now()
-      });
+      };
+      this.userMetadata[roomId][userId] = fullUserData;
 
-      // 2. NOTIFY: Tell others and send current user list back to joiner
-      this.broadcastToRoom(roomId, { type: 'userJoined', userId }, userId);
+      // 1. PERSISTENT: Save join info to Firebase (includes image URL)
+      await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).set(fullUserData);
+
+      // 2. NOTIFY OTHERS: Tell them WHO joined (with name and image)
+      this.broadcastToRoom(roomId, { 
+        type: 'userJoined', 
+        ...fullUserData 
+      }, userId);
+
+      // 3. SEND CURRENT USER LIST BACK: Send full objects, not just IDs
       socket.send(JSON.stringify({
         type: 'roomJoined',
         roomId,
-        users: Object.keys(this.activeConnections[roomId]),
+        users: Object.values(this.userMetadata[roomId]), // Sending [{userId, name, profileImageUrl}, ...]
       }));
+
     } catch (error) {
       console.error("❌ Join Error:", error);
     }
   }
 
-  /**
-   * HANDLES VOICE UPDATES
-   * Logic: Ephemeral (Speaking) vs Persistent (Mic Status)
-   */
   async updateVoiceStatus(roomId, userId, updates) {
     try {
-      // PERSISTENT: Only write to Firebase if Mic state changes (Low frequency)
       if (updates.hasOwnProperty('isMicActive')) {
         await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).update({
           isMicActive: updates.isMicActive
         });
+        // Update local memory too
+        if (this.userMetadata[roomId]?.[userId]) {
+          this.userMetadata[roomId][userId].isMicActive = updates.isMicActive;
+        }
       }
 
-      // EPHEMERAL: Always broadcast via WebSocket for the UI pulsating effect
-      // This is high frequency but FREE because it stays in RAM.
       this.broadcastToRoom(roomId, { 
         type: 'voiceStatusUpdate', 
         userId, 
@@ -66,13 +78,17 @@ class RoomManager {
     if (roomId && this.activeConnections[roomId]?.[userId]) {
       delete this.activeConnections[roomId][userId];
       
-      // Cleanup Firebase
-      await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).remove();
+      // Cleanup Metadata memory
+      if (this.userMetadata[roomId]) {
+        delete this.userMetadata[roomId][userId];
+      }
       
+      await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).remove();
       this.broadcastToRoom(roomId, { type: 'userLeft', userId });
       
       if (Object.keys(this.activeConnections[roomId]).length === 0) {
         delete this.activeConnections[roomId];
+        delete this.userMetadata[roomId];
       }
     }
   }
