@@ -9,3 +9,5 @@ node_modules/
 
 # Local test files
 index.html
+
+stress_test.js
