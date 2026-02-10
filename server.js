@@ -22,7 +22,30 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: process.env.FIREBASE_DATABASE_URL
 });
+// This will tell us the EXACT technical error
+const testRef = admin.database().ref('.info/connected');
 
+testRef.on('value', (snapshot) => {
+    if (snapshot.val() === true) {
+        console.log("✅ Firebase Connection: Verified");
+    } else {
+        console.log("⚠️ Firebase Connection: Disconnected/Pending");
+    }
+}, (error) => {
+    // THIS LOGS THE REAL ERROR OBJECT
+    console.error("❌ FIREBASE CRITICAL ERROR:", {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+    });
+});
+
+// Also try a test write to catch permission issues immediately
+admin.database().ref('server_health_check').set({
+    last_online: new Date().toISOString()
+}).catch((error) => {
+    console.error("❌ FIREBASE WRITE ERROR:", error.code, error.message);
+});
 const db = admin.database();
 
 // 2. Import Handlers
