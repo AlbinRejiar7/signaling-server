@@ -4,22 +4,40 @@ const http = require('http');
 const admin = require('firebase-admin');
 
 // 1. Initialize Firebase Admin SDK
-// 1. Initialize Firebase Admin SDK
+
 let serviceAccount;
 
 try {
+  console.log("Checking for FIREBASE_SERVICE_ACCOUNT...");
+  
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    // If on Zeabur, use the full JSON string from ENV
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    console.log("☁️ Using FIREBASE_SERVICE_ACCOUNT from Environment Variables");
+    // 1. Clean the string (sometimes Zeabur adds extra quotes)
+    let rawJson = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+    
+    serviceAccount = JSON.parse(rawJson);
+    
+    // 2. Fix the Private Key newline issue (CRITICAL)
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
+    
+    console.log("☁️ JSON parsed successfully for Project:", serviceAccount.project_id);
   } else {
-    // If on Local, use your file
     serviceAccount = require("./serviceAccountKey.json");
-    console.log("🛠️ Using local serviceAccountKey.json");
+    console.log("🛠️ Using local file");
   }
+
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: process.env.FIREBASE_DATABASE_URL
+  });
+  
+  console.log("🚀 Firebase Admin Initialized!");
+
 } catch (e) {
-  console.error("❌ FATAL: Could not initialize Firebase credentials", e.message);
-  process.exit(1);
+  // If this happens, you will see a REAL error in Zeabur logs
+  console.error("❌ CRITICAL INITIALIZATION ERROR:", e.message);
+  // Don't exit yet, let the logs flush
 }
 
 admin.initializeApp({
