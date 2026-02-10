@@ -27,7 +27,7 @@ handleConnection(socket) {
           
           console.log(`✅ Session Linked: ${userId} joined Room: ${roomId}`);
 
-          // RoomManager-lekk minimal data mathram pass cheyyunnu
+        
           this.roomManager.joinRoom(socket, roomId, { 
             userId: userId,
             isMicActive: true // Default starting state

@@ -26,8 +26,6 @@ for (let i = 1; i <= USER_COUNT; i++) {
             const isSpeaking = Math.random() > 0.5; // Randomly speak/stop
             ws.send(JSON.stringify({
                 type: 'updateVoiceStatus',
-                roomId: ROOM_ID,
-                userId: userId,
                 updates: {
                     isSpeaking: isSpeaking,
                     isMicActive: true
