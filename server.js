@@ -4,18 +4,22 @@ const http = require('http');
 const admin = require('firebase-admin');
 
 // 1. Initialize Firebase Admin SDK
+// 1. Initialize Firebase Admin SDK
 let serviceAccount;
+
 try {
-  serviceAccount = require("./serviceAccountKey.json");
-  console.log("🛠️ Using local serviceAccountKey.json");
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    // If on Zeabur, use the full JSON string from ENV
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    console.log("☁️ Using FIREBASE_SERVICE_ACCOUNT from Environment Variables");
+  } else {
+    // If on Local, use your file
+    serviceAccount = require("./serviceAccountKey.json");
+    console.log("🛠️ Using local serviceAccountKey.json");
+  }
 } catch (e) {
-  console.log("☁️ File not found, using Environment Variables");
-  serviceAccount = {
-    type: "service_account",
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
-    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  };
+  console.error("❌ FATAL: Could not initialize Firebase credentials", e.message);
+  process.exit(1);
 }
 
 admin.initializeApp({
