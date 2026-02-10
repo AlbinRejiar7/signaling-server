@@ -5,8 +5,9 @@ class MessageRouter {
   }
 
   handleMessage(socket, message) {
-    const { type, roomId, targetUserId, ...payload } = message;
+    const { type, targetUserId, updates, ...payload } = message;
     const userId = socket.userId;
+    const roomId = socket.currentRoomId;
 
     const roomConnections = this.roomManager.activeConnections[roomId];
 
@@ -17,15 +18,15 @@ class MessageRouter {
 
     switch (type) {
       case 'updateVoiceStatus':
-        if (payload.updates) {
-          // CLEANUP: isSpeaking server-il store cheyyenda, 
-          // pakshe isMicActive undengil athu mathram filter cheyyanam.
+        if (updates && typeof updates === 'object') {
+         
+          
           const cleanUpdates = {};
-          if (payload.updates.hasOwnProperty('isMicActive')) {
-            cleanUpdates.isMicActive = payload.updates.isMicActive;
+          if (updates.hasOwnProperty('isMicActive')) {
+            cleanUpdates.isMicActive = updates.isMicActive;
           }
-          if (payload.updates.hasOwnProperty('isSpeaking')) {
-            cleanUpdates.isSpeaking = payload.updates.isSpeaking;
+          if (updates.hasOwnProperty('isSpeaking')) {
+            cleanUpdates.isSpeaking = updates.isSpeaking;
           }
 
           // Pass only the necessary updates to RoomManager
