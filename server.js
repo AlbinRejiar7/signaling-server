@@ -15,7 +15,7 @@ const parsePositiveInt = (value, fallback) => {
 
 const PORT = parsePositiveInt(process.env.PORT, 8080);
 const MAX_WS_PAYLOAD_BYTES = parsePositiveInt(process.env.MAX_WS_PAYLOAD_BYTES, 64 * 1024);
-const INDEX_FILE_PATH = path.join(__dirname, 'index.html');
+const HOME_FILE_PATH = path.join(__dirname, 'home.html');
 const WELL_KNOWN_DIR = path.join(__dirname, '.well-known');
 const ASSET_LINKS_PATH = path.join(WELL_KNOWN_DIR, 'assetlinks.json');
 const APPLE_ASSOCIATION_PATH = path.join(WELL_KNOWN_DIR, 'apple-app-site-association');
@@ -119,7 +119,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (requestUrl.pathname === '/' || requestUrl.pathname === '/join') {
-    serveFile(res, INDEX_FILE_PATH, 'text/html; charset=utf-8');
+    serveFile(res, HOME_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 

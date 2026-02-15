@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncTogether - Voice Rooms</title>
+  <style>
+    :root {
+      --bg: #f3f7fb;
+      --card: #ffffff;
+      --ink: #10232f;
+      --muted: #476074;
+      --primary: #0e7490;
+      --accent: #22c55e;
+      --ring: #89d6ea;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, #d8f2ff 0%, transparent 35%),
+        radial-gradient(circle at 90% 20%, #dbfce7 0%, transparent 30%),
+        linear-gradient(160deg, var(--bg) 0%, #eaf1f9 100%);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(760px, 100%);
+      background: var(--card);
+      border: 1px solid #d8e6f1;
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(17, 35, 52, 0.12);
+      overflow: hidden;
+    }
+
+    .hero {
+      padding: 26px 26px 18px;
+      background: linear-gradient(135deg, #0e7490 0%, #0ea5a6 55%, #22c55e 100%);
+      color: #f8fdff;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.8rem;
+      letter-spacing: 0.3px;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: #dcf8ff;
+      line-height: 1.45;
+    }
+
+    .body {
+      padding: 24px 26px 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid #c8deef;
+      background: #f0f9ff;
+      color: #155e75;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .row {
+      border: 1px solid #d6e5f0;
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: #fcfeff;
+    }
+
+    .row h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+      color: #0f3a4a;
+    }
+
+    .row p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .code {
+      margin-top: 10px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.87rem;
+      color: #0a4b5f;
+      word-break: break-all;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 2px;
+    }
+
+    .btn {
+      display: inline-block;
+      text-decoration: none;
+      color: white;
+      background: var(--primary);
+      border: 2px solid var(--primary);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 7px 16px rgba(14, 116, 144, 0.28);
+    }
+
+    .btn.alt {
+      color: #0f3a4a;
+      background: white;
+      border-color: #c4dcec;
+    }
+
+    .note {
+      color: #5b7184;
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 640px) {
+      .hero {
+        padding: 22px 18px 16px;
+      }
+
+      .body {
+        padding: 18px;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <section class="hero">
+      <h1>SyncTogether Voice Rooms</h1>
+      <p class="subtitle">Real-time voice rooms for shared listening and live sessions across your devices.</p>
+    </section>
+
+    <section class="body">
+      <span class="pill" id="roomBadge">No room in URL</span>
+
+      <div class="row">
+        <h2>What this app does</h2>
+        <p>SyncTogether lets users join a room and talk instantly with low-latency voice over WebRTC signaling.</p>
+      </div>
+
+      <div class="row">
+        <h2>Deep link format</h2>
+        <p>Use this link format in your app, invites, and QR codes.</p>
+        <div class="code" id="deepLink">https://synctogether.zeabur.app/join?room=123456</div>
+      </div>
+
+      <div class="actions">
+        <a class="btn" href="/join?room=123456">Try Sample Room</a>
+        <a class="btn alt" href="/ping">Server Health</a>
+      </div>
+
+      <p class="note">If your mobile app is installed and App/Universal Links are configured, this URL opens the app directly.</p>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const room = params.get("room");
+      const badge = document.getElementById("roomBadge");
+      const deepLink = document.getElementById("deepLink");
+
+      if (!room) return;
+
+      badge.textContent = "Room from URL: " + room;
+      deepLink.textContent = "https://synctogether.zeabur.app/join?room=" + encodeURIComponent(room);
+    })();
+  </script>
+</body>
+</html>
