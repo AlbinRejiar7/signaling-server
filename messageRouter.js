@@ -35,7 +35,11 @@ class MessageRouter {
         break;
 
       case 'leave':
-        this.roomManager.leaveRoom(socket);
+        this.roomManager.leaveRoom(socket).catch((error) => {
+          console.warn('⚠️ Leave room failed:', error.message);
+        });
+        socket.userId = null;
+        socket.currentRoomId = null;
         break;
 
       case 'offer':

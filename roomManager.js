@@ -1,72 +1,90 @@
 class RoomManager {
   constructor(db) {
     this.db = db;
-    this.activeConnections = {}; 
-    // New: Store user metadata in RAM for fast access
-    this.userMetadata = {}; 
+    this.activeConnections = {};
+    this.userMetadata = {};
   }
 
-async joinRoom(socket, roomId, userData) {
+  safeSend(socket, payload) {
+    if (!socket || socket.readyState !== 1) return;
+    try {
+      socket.send(JSON.stringify(payload));
+    } catch (error) {
+      console.warn('⚠️ Failed to send socket payload:', error.message);
+    }
+  }
+
+  async joinRoom(socket, roomId, userData) {
     const userId = socket.userId;
     if (!roomId) return;
-    socket.currentRoomId = roomId; 
+    socket.currentRoomId = roomId;
 
     try {
       if (!this.activeConnections[roomId]) this.activeConnections[roomId] = {};
       if (!this.userMetadata[roomId]) this.userMetadata[roomId] = {};
 
-      this.activeConnections[roomId][userId] = socket;
-      
-      // MODIFIED: Only userId and isMicActive
       const minimalUserData = {
         userId: userId,
-        isMicActive: true
+        isMicActive: typeof userData?.isMicActive === 'boolean' ? userData.isMicActive : true
       };
-      
-      // RAM-ilum Firebase-ilum ippo ithu mathrame pogo
-      this.userMetadata[roomId][userId] = minimalUserData;
 
-      // 1. PERSISTENT: Firebase-lekkum minimal data mathram vidunnu
       await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).set(minimalUserData);
 
-      // 2. NOTIFY OTHERS: Baakkiyullavarkkum minimal data ayakkunnu
-      this.broadcastToRoom(roomId, { 
-        type: 'userJoined', 
+      this.activeConnections[roomId][userId] = socket;
+      this.userMetadata[roomId][userId] = minimalUserData;
+
+      this.broadcastToRoom(roomId, {
+        type: 'userJoined',
         ...minimalUserData 
       }, userId);
 
-      // 3. SEND CURRENT USER LIST BACK
-      socket.send(JSON.stringify({
+      this.safeSend(socket, {
         type: 'roomJoined',
         roomId,
-        users: Object.values(this.userMetadata[roomId]), // [{userId, isMicActive}, ...]
-      }));
-
+        users: Object.values(this.userMetadata[roomId]),
+      });
     } catch (error) {
-      console.error("❌ Join Error:", error);
+      console.error('❌ Join Error:', error.message);
+      this.safeSend(socket, { type: 'error', message: 'Failed to join room' });
+      if (this.activeConnections[roomId]) {
+        delete this.activeConnections[roomId][userId];
+      }
+      if (this.userMetadata[roomId]) {
+        delete this.userMetadata[roomId][userId];
+      }
     }
   }
 
   async updateVoiceStatus(roomId, userId, updates) {
     try {
-      if (updates.hasOwnProperty('isMicActive')) {
+      const cleanUpdates = {};
+
+      if (typeof updates?.isMicActive === 'boolean') {
+        cleanUpdates.isMicActive = updates.isMicActive;
+      }
+
+      if (typeof updates?.isSpeaking === 'boolean') {
+        cleanUpdates.isSpeaking = updates.isSpeaking;
+      }
+
+      if (Object.keys(cleanUpdates).length === 0) return;
+
+      if (cleanUpdates.hasOwnProperty('isMicActive')) {
         await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).update({
-          isMicActive: updates.isMicActive
+          isMicActive: cleanUpdates.isMicActive
         });
-        // Update local memory too
         if (this.userMetadata[roomId]?.[userId]) {
-          this.userMetadata[roomId][userId].isMicActive = updates.isMicActive;
+          this.userMetadata[roomId][userId].isMicActive = cleanUpdates.isMicActive;
         }
       }
 
-      this.broadcastToRoom(roomId, { 
-        type: 'voiceStatusUpdate', 
-        userId, 
-        ...updates 
+      this.broadcastToRoom(roomId, {
+        type: 'voiceStatusUpdate',
+        userId,
+        ...cleanUpdates
       }, userId);
-
     } catch (e) {
-      console.warn("⚠️ Status Update failed:", e.message);
+      console.warn('⚠️ Status Update failed:', e.message);
     }
   }
 
@@ -74,21 +92,28 @@ async joinRoom(socket, roomId, userData) {
     const userId = socket.userId;
     const roomId = socket.currentRoomId;
 
-    if (roomId && this.activeConnections[roomId]?.[userId]) {
-      delete this.activeConnections[roomId][userId];
-      
-      // Cleanup Metadata memory
-      if (this.userMetadata[roomId]) {
-        delete this.userMetadata[roomId][userId];
-      }
-      
+    if (!roomId || !userId) return;
+    if (!this.activeConnections[roomId]?.[userId]) return;
+
+    delete this.activeConnections[roomId][userId];
+
+    if (this.userMetadata[roomId]) {
+      delete this.userMetadata[roomId][userId];
+    }
+
+    try {
       await this.db.ref(`rooms/${roomId}/voice_call/${userId}`).remove();
-      this.broadcastToRoom(roomId, { type: 'userLeft', userId });
-      
-      // Optional chaining approach
-if (Object.keys(this.activeConnections[roomId] || {}).length === 0) {
-    delete this.activeConnections[roomId];
-}
+    } catch (error) {
+      console.warn('⚠️ Firebase cleanup failed:', error.message);
+    }
+
+    this.broadcastToRoom(roomId, { type: 'userLeft', userId });
+
+    if (Object.keys(this.activeConnections[roomId] || {}).length === 0) {
+      delete this.activeConnections[roomId];
+      if (this.userMetadata[roomId]) {
+        delete this.userMetadata[roomId];
+      }
     }
   }
 
@@ -98,7 +123,11 @@ if (Object.keys(this.activeConnections[roomId] || {}).length === 0) {
     const payload = JSON.stringify(message);
     for (const [userId, userSocket] of Object.entries(roomConnections)) {
       if (userId !== excludeUserId && userSocket.readyState === 1) {
-        userSocket.send(payload);
+        try {
+          userSocket.send(payload);
+        } catch (error) {
+          console.warn('⚠️ Broadcast failed:', error.message);
+        }
       }
     }
   }

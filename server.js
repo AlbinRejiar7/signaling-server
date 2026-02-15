@@ -4,8 +4,15 @@ const http = require('http');
 const admin = require('firebase-admin');
 
 // 1. Initialize Firebase Admin SDK
-// 1. Initialize Firebase Admin SDK
 let serviceAccount;
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const PORT = parsePositiveInt(process.env.PORT, 8080);
+const MAX_WS_PAYLOAD_BYTES = parsePositiveInt(process.env.MAX_WS_PAYLOAD_BYTES, 64 * 1024);
 
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -19,6 +26,11 @@ try {
   }
 } catch (e) {
   console.error("❌ FATAL: Could not initialize Firebase credentials", e.message);
+  process.exit(1);
+}
+
+if (!process.env.FIREBASE_DATABASE_URL) {
+  console.error("❌ FATAL: Missing FIREBASE_DATABASE_URL");
   process.exit(1);
 }
 
@@ -51,6 +63,7 @@ admin.database().ref('server_health_check').set({
     console.error("❌ FIREBASE WRITE ERROR:", error.code, error.message);
 });
 const db = admin.database();
+const auth = admin.auth();
 
 // 2. Import Handlers
 const RoomManager = require('./roomManager');
@@ -59,9 +72,7 @@ const ConnectionHandler = require('./connectionHandler');
 
 const roomManager = new RoomManager(db);
 const messageRouter = new MessageRouter(db, roomManager);
-const connectionHandler = new ConnectionHandler(db, roomManager, messageRouter);
-
-const PORT = process.env.PORT || 8080;
+const connectionHandler = new ConnectionHandler(db, roomManager, messageRouter, auth);
 
 // 3. HTTP Server (for Pings/Health Checks)
 const server = http.createServer((req, res) => {
@@ -75,7 +86,11 @@ const server = http.createServer((req, res) => {
 });
 
 // 4. WebSocket Server
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({
+  server,
+  maxPayload: MAX_WS_PAYLOAD_BYTES,
+  perMessageDeflate: false
+});
 
 console.log('====================================');
 console.log(`🚀 Signaling Server running on port ${PORT}`);
@@ -99,8 +114,37 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 Listening at http://0.0.0.0:${PORT}`);
 });
 
-process.on('SIGINT', () => {
-  console.log('🛑 Shutting down server...');
-  server.close();
-  process.exit();
-});
+let isShuttingDown = false;
+
+const shutdown = (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`🛑 Received ${signal}. Shutting down server...`);
+
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.close(1001, 'Server shutting down');
+    }
+  }
+
+  const forcedExit = setTimeout(() => {
+    console.error('❌ Forced shutdown timeout reached');
+    process.exit(1);
+  }, 10_000);
+  forcedExit.unref();
+
+  server.close((error) => {
+    clearTimeout(forcedExit);
+    if (error) {
+      console.error('❌ Error while closing server:', error.message);
+      process.exit(1);
+      return;
+    }
+    console.log('✅ Server closed cleanly');
+    process.exit(0);
+  });
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
