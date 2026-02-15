@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.admin.bloc_watch_together",
+        "paths": [
+          "/join",
+          "/join/*"
+        ]
+      }
+    ]
+  }
+}

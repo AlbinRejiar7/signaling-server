@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.admin.bloc_watch_together",
+      "sha256_cert_fingerprints": [
+        "37:00:0A:F5:31:3C:5E:8A:A0:27:93:75:A0:84:B3:D3:94:A0:2D:AE:AA:B6:D0:20:6F:73:73:03:FB:A9:88:1F"
+      ]
+    }
+  }
+]

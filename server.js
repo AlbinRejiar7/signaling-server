@@ -1,6 +1,8 @@
 require('dotenv').config(); 
 const WebSocket = require('ws');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const admin = require('firebase-admin');
 
 // 1. Initialize Firebase Admin SDK
@@ -13,6 +15,28 @@ const parsePositiveInt = (value, fallback) => {
 
 const PORT = parsePositiveInt(process.env.PORT, 8080);
 const MAX_WS_PAYLOAD_BYTES = parsePositiveInt(process.env.MAX_WS_PAYLOAD_BYTES, 64 * 1024);
+const INDEX_FILE_PATH = path.join(__dirname, 'index.html');
+const WELL_KNOWN_DIR = path.join(__dirname, '.well-known');
+const ASSET_LINKS_PATH = path.join(WELL_KNOWN_DIR, 'assetlinks.json');
+const APPLE_ASSOCIATION_PATH = path.join(WELL_KNOWN_DIR, 'apple-app-site-association');
+
+const serveFile = (res, filePath, contentType) => {
+  fs.readFile(filePath, 'utf8', (error, content) => {
+    if (error) {
+      const fileName = path.basename(filePath);
+      console.error(`❌ Failed to load ${fileName}:`, error.message);
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=300'
+    });
+    res.end(content);
+  });
+};
 
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -76,9 +100,32 @@ const connectionHandler = new ConnectionHandler(db, roomManager, messageRouter, 
 
 // 3. HTTP Server (for Pings/Health Checks)
 const server = http.createServer((req, res) => {
-  if (req.url === '/ping') {
+  const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  if (requestUrl.pathname === '/ping') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Server is Awake 🚀');
+    return;
+  }
+
+  if (requestUrl.pathname === '/.well-known/assetlinks.json') {
+    serveFile(res, ASSET_LINKS_PATH, 'application/json; charset=utf-8');
+    return;
+  }
+
+  if (requestUrl.pathname === '/.well-known/apple-app-site-association') {
+    serveFile(res, APPLE_ASSOCIATION_PATH, 'application/json; charset=utf-8');
+    return;
+  }
+
+  if (requestUrl.pathname === '/' || requestUrl.pathname === '/join') {
+    serveFile(res, INDEX_FILE_PATH, 'text/html; charset=utf-8');
+    return;
+  }
+
+  if (requestUrl.pathname === '/favicon.ico') {
+    res.writeHead(204);
+    res.end();
   } else {
     res.writeHead(404);
     res.end();
