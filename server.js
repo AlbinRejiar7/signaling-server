@@ -16,6 +16,9 @@ const parsePositiveInt = (value, fallback) => {
 const PORT = parsePositiveInt(process.env.PORT, 8080);
 const MAX_WS_PAYLOAD_BYTES = parsePositiveInt(process.env.MAX_WS_PAYLOAD_BYTES, 64 * 1024);
 const HOME_FILE_PATH = path.join(__dirname, 'home.html');
+const ACCOUNT_DELETION_FILE_PATH = path.join(__dirname, 'account-deletion.html');
+const PRIVACY_POLICY_FILE_PATH = path.join(__dirname, 'privacy-policy.html');
+const TERMS_AND_CONDITIONS_FILE_PATH = path.join(__dirname, 'terms-and-conditions.html');
 const WELL_KNOWN_DIR = path.join(__dirname, '.well-known');
 const ASSET_LINKS_PATH = path.join(WELL_KNOWN_DIR, 'assetlinks.json');
 const APPLE_ASSOCIATION_PATH = path.join(WELL_KNOWN_DIR, 'apple-app-site-association');
@@ -120,6 +123,25 @@ const server = http.createServer((req, res) => {
 
   if (requestUrl.pathname === '/' || requestUrl.pathname === '/join') {
     serveFile(res, HOME_FILE_PATH, 'text/html; charset=utf-8');
+    return;
+  }
+
+  if (requestUrl.pathname === '/account-deletion' || requestUrl.pathname === '/account-deletion.html') {
+    serveFile(res, ACCOUNT_DELETION_FILE_PATH, 'text/html; charset=utf-8');
+    return;
+  }
+
+  if (requestUrl.pathname === '/privacy-policy' || requestUrl.pathname === '/privacy-policy.html') {
+    serveFile(res, PRIVACY_POLICY_FILE_PATH, 'text/html; charset=utf-8');
+    return;
+  }
+
+  if (
+    requestUrl.pathname === '/terms-and-conditions' ||
+    requestUrl.pathname === '/terms-and-condition' ||
+    requestUrl.pathname === '/terms-and-conditions.html'
+  ) {
+    serveFile(res, TERMS_AND_CONDITIONS_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 
