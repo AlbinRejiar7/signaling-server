@@ -15,13 +15,20 @@ const parsePositiveInt = (value, fallback) => {
 
 const PORT = parsePositiveInt(process.env.PORT, 8080);
 const MAX_WS_PAYLOAD_BYTES = parsePositiveInt(process.env.MAX_WS_PAYLOAD_BYTES, 64 * 1024);
+const DEFAULT_ISSUE_FETCH_LIMIT = parsePositiveInt(process.env.ISSUE_DASHBOARD_DEFAULT_LIMIT, 100);
+const MAX_ISSUE_FETCH_LIMIT = 500;
+const ISSUES_COLLECTION_ENV = (process.env.ISSUES_COLLECTION || '').trim();
 const HOME_FILE_PATH = path.join(__dirname, 'home.html');
+const ISSUE_DASHBOARD_FILE_PATH = path.join(__dirname, 'issue-dashboard.html');
 const ACCOUNT_DELETION_FILE_PATH = path.join(__dirname, 'account-deletion.html');
 const PRIVACY_POLICY_FILE_PATH = path.join(__dirname, 'privacy-policy.html');
 const TERMS_AND_CONDITIONS_FILE_PATH = path.join(__dirname, 'terms-and-conditions.html');
 const WELL_KNOWN_DIR = path.join(__dirname, '.well-known');
 const ASSET_LINKS_PATH = path.join(WELL_KNOWN_DIR, 'assetlinks.json');
 const APPLE_ASSOCIATION_PATH = path.join(WELL_KNOWN_DIR, 'apple-app-site-association');
+const DEFAULT_ISSUE_COLLECTION_CANDIDATES = ISSUES_COLLECTION_ENV
+  ? [ISSUES_COLLECTION_ENV]
+  : ['issue_reports', 'issueReports', 'issues', 'support_reports', 'reports'];
 
 const serveFile = (res, filePath, contentType) => {
   fs.readFile(filePath, 'utf8', (error, content) => {
@@ -48,6 +55,100 @@ const normalizePathname = (pathname) => {
 
   const trimmed = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
   return trimmed.toLowerCase();
+};
+
+const parseBoundedInt = (value, fallback, min, max) => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const sanitizeToken = (value, maxLen = 64) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.slice(0, maxLen);
+};
+
+const sanitizeCollectionName = (value) => {
+  const token = sanitizeToken(value, 120);
+  if (!token) return '';
+  return token.replace(/[^A-Za-z0-9_-]/g, '');
+};
+
+const toMillis = (value) => {
+  if (!value) return 0;
+
+  if (typeof value === 'object') {
+    if (typeof value.seconds === 'number') {
+      const nanos = typeof value.nanoseconds === 'number' ? value.nanoseconds : 0;
+      return value.seconds * 1000 + Math.floor(nanos / 1_000_000);
+    }
+
+    if (typeof value.iso === 'string') {
+      const millis = Date.parse(value.iso);
+      return Number.isFinite(millis) ? millis : 0;
+    }
+  }
+
+  if (typeof value === 'string') {
+    const millis = Date.parse(value);
+    return Number.isFinite(millis) ? millis : 0;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  return 0;
+};
+
+const normalizeFirestoreValue = (value) => {
+  if (value === undefined) return null;
+  if (value === null) return null;
+
+  if (value instanceof Date) {
+    return {
+      iso: value.toISOString()
+    };
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof value.toDate === 'function' &&
+    typeof value.seconds === 'number'
+  ) {
+    const asDate = value.toDate();
+    return {
+      iso: asDate.toISOString(),
+      seconds: value.seconds,
+      nanoseconds: value.nanoseconds
+    };
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeFirestoreValue);
+  }
+
+  if (typeof value === 'object') {
+    const output = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      output[key] = normalizeFirestoreValue(nestedValue);
+    }
+    return output;
+  }
+
+  return value;
+};
+
+const sendJson = (res, statusCode, payload) => {
+  const body = JSON.stringify(payload);
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store'
+  });
+  res.end(body);
 };
 
 try {
@@ -100,6 +201,157 @@ admin.database().ref('server_health_check').set({
 });
 const db = admin.database();
 const auth = admin.auth();
+const firestore = admin.firestore();
+
+const doesIssueMatchSearch = (issueData, searchText) => {
+  if (!searchText) return true;
+
+  const haystack = [
+    issueData.title,
+    issueData.description,
+    issueData.status,
+    issueData.source,
+    issueData.authUid,
+    issueData?.app?.appName,
+    issueData?.app?.packageName,
+    issueData?.reporter?.name,
+    issueData?.reporter?.email,
+    issueData?.reporter?.username,
+    issueData?.reporter?.uid,
+    issueData?.device?.brand,
+    issueData?.device?.manufacturer,
+    issueData?.device?.model,
+    issueData?.device?.platform
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase())
+    .join(' ');
+
+  return haystack.includes(searchText);
+};
+
+const fetchIssueReports = async ({ collectionOverride, status, source, search, limit }) => {
+  const requestedCollection = sanitizeCollectionName(collectionOverride);
+  const statusFilter = sanitizeToken(status, 40).toLowerCase();
+  const sourceFilter = sanitizeToken(source, 80).toLowerCase();
+  const searchFilter = sanitizeToken(search, 160).toLowerCase();
+  const fetchLimit = parseBoundedInt(limit, DEFAULT_ISSUE_FETCH_LIMIT, 1, MAX_ISSUE_FETCH_LIMIT);
+
+  const collectionCandidates = requestedCollection
+    ? [requestedCollection]
+    : DEFAULT_ISSUE_COLLECTION_CANDIDATES;
+
+  let selectedCollection = collectionCandidates[0];
+  let selectedDocs = [];
+  let fallbackError = null;
+
+  for (const candidate of collectionCandidates) {
+    try {
+      const snapshot = await firestore
+        .collection(candidate)
+        .orderBy('createdAt', 'desc')
+        .limit(fetchLimit)
+        .get();
+
+      selectedCollection = candidate;
+      selectedDocs = snapshot.docs;
+
+      if (requestedCollection || !snapshot.empty) {
+        break;
+      }
+    } catch (error) {
+      fallbackError = error;
+
+      try {
+        const snapshotWithoutOrder = await firestore.collection(candidate).limit(fetchLimit).get();
+        selectedCollection = candidate;
+        selectedDocs = snapshotWithoutOrder.docs;
+
+        if (requestedCollection || !snapshotWithoutOrder.empty) {
+          break;
+        }
+      } catch (secondaryError) {
+        fallbackError = secondaryError;
+      }
+    }
+  }
+
+  if (!selectedCollection) {
+    throw fallbackError || new Error('Could not determine issue collection');
+  }
+
+  let issues = selectedDocs.map((doc) => {
+    const normalizedData = normalizeFirestoreValue(doc.data());
+    return {
+      id: doc.id,
+      path: doc.ref.path,
+      data: normalizedData
+    };
+  });
+
+  issues = issues.sort((left, right) => {
+    const leftMillis = toMillis(left.data?.createdAt);
+    const rightMillis = toMillis(right.data?.createdAt);
+    return rightMillis - leftMillis;
+  });
+
+  if (statusFilter && statusFilter !== 'all') {
+    issues = issues.filter((issue) => String(issue.data?.status || '').toLowerCase() === statusFilter);
+  }
+
+  if (sourceFilter && sourceFilter !== 'all') {
+    issues = issues.filter((issue) => String(issue.data?.source || '').toLowerCase() === sourceFilter);
+  }
+
+  if (searchFilter) {
+    issues = issues.filter((issue) => doesIssueMatchSearch(issue.data || {}, searchFilter));
+  }
+
+  const statusCounts = {};
+  for (const issue of issues) {
+    const key = String(issue.data?.status || 'unknown').toLowerCase();
+    statusCounts[key] = (statusCounts[key] || 0) + 1;
+  }
+
+  return {
+    collection: selectedCollection,
+    requestedCollection: requestedCollection || null,
+    count: issues.length,
+    limit: fetchLimit,
+    statusCounts,
+    issues
+  };
+};
+
+const handleIssuesApiRequest = async (res, requestUrl) => {
+  try {
+    const result = await fetchIssueReports({
+      collectionOverride: requestUrl.searchParams.get('collection'),
+      status: requestUrl.searchParams.get('status'),
+      source: requestUrl.searchParams.get('source'),
+      search: requestUrl.searchParams.get('search'),
+      limit: requestUrl.searchParams.get('limit')
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      collection: result.collection,
+      requestedCollection: result.requestedCollection,
+      count: result.count,
+      limit: result.limit,
+      statusCounts: result.statusCounts,
+      items: result.issues
+    });
+  } catch (error) {
+    console.error('❌ Failed to load issue reports:', error.message);
+    sendJson(res, 500, {
+      ok: false,
+      error: 'Failed to load issue reports',
+      details: error.message
+    });
+  }
+};
 
 // 2. Import Handlers
 const RoomManager = require('./roomManager');
@@ -121,6 +373,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (pathname === '/api/issues') {
+    handleIssuesApiRequest(res, requestUrl);
+    return;
+  }
+
   if (pathname === '/.well-known/assetlinks.json') {
     serveFile(res, ASSET_LINKS_PATH, 'application/json; charset=utf-8');
     return;
@@ -133,6 +390,11 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/' || pathname === '/join') {
     serveFile(res, HOME_FILE_PATH, 'text/html; charset=utf-8');
+    return;
+  }
+
+  if (pathname === '/issues-dashboard' || pathname === '/issues-dashboard.html') {
+    serveFile(res, ISSUE_DASHBOARD_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 

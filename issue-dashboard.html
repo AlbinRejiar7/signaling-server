@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SyncFlix Issue Dashboard</title>
+  <style>
+    :root {
+      --bg: #eef3f9;
+      --panel: #ffffff;
+      --ink: #112636;
+      --muted: #5a6c7e;
+      --line: #d6e4f0;
+      --primary: #0e7490;
+      --primary-soft: #e7f8fc;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --ok: #166534;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 0%, #dff6ff 0%, transparent 35%),
+        radial-gradient(circle at 100% 5%, #e3ffe8 0%, transparent 32%),
+        linear-gradient(180deg, #f0f5fb 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(16, 36, 54, 0.08);
+    }
+
+    .header {
+      padding: 18px 18px 14px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      letter-spacing: 0.2px;
+    }
+
+    .header p {
+      margin: 7px 0 0;
+      color: var(--muted);
+    }
+
+    .controls {
+      padding: 14px 18px 18px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .control {
+      display: grid;
+      gap: 6px;
+    }
+
+    label {
+      color: #2b4358;
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    input,
+    select,
+    button {
+      font: inherit;
+      border-radius: 9px;
+      border: 1px solid #bfd3e3;
+      padding: 10px 11px;
+      background: #fbfdff;
+      color: var(--ink);
+      min-height: 40px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #f3fcff;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: var(--primary);
+    }
+
+    .status-row {
+      padding: 0 18px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      border: 1px solid #c9dced;
+      background: #f8fcff;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 0.85rem;
+      color: #23455f;
+    }
+
+    .meta {
+      padding: 0 18px 16px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .layout {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1.45fr 1fr;
+      align-items: start;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 70vh;
+      border-top: 1px solid var(--line);
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 860px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid #e6eef7;
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.88rem;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f4f9ff;
+      color: #274760;
+      font-weight: 700;
+    }
+
+    tr.clickable {
+      cursor: pointer;
+    }
+
+    tr.clickable:hover {
+      background: #f9fcff;
+    }
+
+    tr.selected {
+      background: var(--primary-soft);
+    }
+
+    .status-pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      border: 1px solid #bfd2e2;
+      color: #235272;
+      background: #eef7ff;
+      white-space: nowrap;
+    }
+
+    .status-pill.open {
+      color: var(--warn);
+      border-color: #f8d9a8;
+      background: #fff8ee;
+    }
+
+    .status-pill.resolved,
+    .status-pill.closed {
+      color: var(--ok);
+      border-color: #b8e4c7;
+      background: #effcf3;
+    }
+
+    .status-pill.error {
+      color: var(--danger);
+      border-color: #f2bec0;
+      background: #fff1f1;
+    }
+
+    .detail {
+      padding: 16px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 14px;
+    }
+
+    .section {
+      border: 1px solid #dbe7f3;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fcfeff;
+    }
+
+    .section h3 {
+      margin: 0 0 10px;
+      font-size: 0.97rem;
+      color: #24445b;
+    }
+
+    .kv {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 132px 1fr;
+      gap: 8px 10px;
+    }
+
+    .kv dt {
+      margin: 0;
+      color: #3f5970;
+      font-weight: 600;
+    }
+
+    .kv dd {
+      margin: 0;
+      color: #203949;
+      word-break: break-word;
+    }
+
+    .json {
+      margin: 0;
+      background: #0f1e2c;
+      color: #d6e3f3;
+      border-radius: 9px;
+      padding: 12px;
+      overflow: auto;
+      max-height: 320px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.77rem;
+      line-height: 1.5;
+    }
+
+    .empty {
+      padding: 20px 16px;
+      color: var(--muted);
+      font-size: 0.93rem;
+    }
+
+    .error {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    @media (max-width: 1080px) {
+      .controls {
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .shell {
+        padding: 12px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .kv {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="card">
+      <div class="header">
+        <h1>Issue Reporting Dashboard</h1>
+        <p>Review reports from Firebase with full app, reporter, and device metadata.</p>
+      </div>
+
+      <div class="controls">
+        <div class="control">
+          <label for="collectionInput">Collection</label>
+          <input id="collectionInput" type="text" placeholder="Auto detect" />
+        </div>
+        <div class="control">
+          <label for="statusFilter">Status</label>
+          <select id="statusFilter">
+            <option value="all">All</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="sourceFilter">Source</label>
+          <input id="sourceFilter" type="text" placeholder="profile_page" />
+        </div>
+        <div class="control">
+          <label for="searchInput">Search</label>
+          <input id="searchInput" type="text" placeholder="title, email, package..." />
+        </div>
+        <div class="control">
+          <label for="limitInput">Limit</label>
+          <select id="limitInput">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="300">300</option>
+            <option value="500">500</option>
+          </select>
+        </div>
+        <div class="control">
+          <label>&nbsp;</label>
+          <div style="display:flex; gap:8px;">
+            <button id="refreshBtn" type="button">Refresh</button>
+            <button id="resetBtn" type="button" class="secondary">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="statusRow" class="status-row"></div>
+      <div id="metaLine" class="meta">Loading reports...</div>
+    </section>
+
+    <section class="layout">
+      <section class="card">
+        <div class="table-wrap">
+          <table id="issuesTable">
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Reporter</th>
+                <th>Device</th>
+                <th>Source</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody id="issuesBody">
+              <tr><td colspan="8" class="empty">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="detail" id="detailPane">
+          <div class="empty">Select a report row to view full details.</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const state = {
+        items: [],
+        selectedId: null,
+        loading: false,
+        lastResult: null
+      };
+
+      const elements = {
+        collectionInput: document.getElementById('collectionInput'),
+        statusFilter: document.getElementById('statusFilter'),
+        sourceFilter: document.getElementById('sourceFilter'),
+        searchInput: document.getElementById('searchInput'),
+        limitInput: document.getElementById('limitInput'),
+        refreshBtn: document.getElementById('refreshBtn'),
+        resetBtn: document.getElementById('resetBtn'),
+        statusRow: document.getElementById('statusRow'),
+        metaLine: document.getElementById('metaLine'),
+        issuesBody: document.getElementById('issuesBody'),
+        detailPane: document.getElementById('detailPane')
+      };
+
+      const toText = (value) => {
+        if (value === null || value === undefined || value === '') return '-';
+        return String(value);
+      };
+
+      const formatDate = (value) => {
+        if (!value) return '-';
+
+        let date = null;
+        if (typeof value === 'string') {
+          const millis = Date.parse(value);
+          if (Number.isFinite(millis)) date = new Date(millis);
+        } else if (typeof value === 'object') {
+          if (typeof value.iso === 'string') {
+            const millis = Date.parse(value.iso);
+            if (Number.isFinite(millis)) date = new Date(millis);
+          } else if (typeof value.seconds === 'number') {
+            const millis = (value.seconds * 1000) + Math.floor((value.nanoseconds || 0) / 1000000);
+            date = new Date(millis);
+          }
+        }
+
+        if (!date) return '-';
+        return date.toLocaleString();
+      };
+
+      const toStatusClass = (status) => {
+        const normalized = String(status || 'unknown').toLowerCase();
+        if (normalized === 'open') return 'open';
+        if (normalized === 'resolved' || normalized === 'closed') return normalized;
+        if (normalized === 'error' || normalized === 'failed') return 'error';
+        return '';
+      };
+
+      const escapeHtml = (value) => {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+
+      const buildApiUrl = () => {
+        const params = new URLSearchParams();
+        const collection = elements.collectionInput.value.trim();
+        const status = elements.statusFilter.value.trim();
+        const source = elements.sourceFilter.value.trim();
+        const search = elements.searchInput.value.trim();
+        const limit = elements.limitInput.value;
+
+        if (collection) params.set('collection', collection);
+        if (status && status !== 'all') params.set('status', status);
+        if (source) params.set('source', source);
+        if (search) params.set('search', search);
+        if (limit) params.set('limit', limit);
+
+        return '/api/issues?' + params.toString();
+      };
+
+      const renderStatusRow = (result) => {
+        const statusCounts = result && result.statusCounts ? result.statusCounts : {};
+        const chips = [];
+        chips.push('<span class="chip">Total: ' + (result && typeof result.count === 'number' ? result.count : 0) + '</span>');
+
+        Object.keys(statusCounts)
+          .sort()
+          .forEach((status) => {
+            chips.push('<span class="chip">' + escapeHtml(status) + ': ' + statusCounts[status] + '</span>');
+          });
+
+        elements.statusRow.innerHTML = chips.join('');
+      };
+
+      const renderMeta = (result) => {
+        if (!result) {
+          elements.metaLine.innerHTML = 'No data loaded yet.';
+          return;
+        }
+
+        const pieces = [];
+        pieces.push('Collection: ' + toText(result.collection));
+        pieces.push('Count: ' + toText(result.count));
+        pieces.push('Limit: ' + toText(result.limit));
+        pieces.push('Generated: ' + formatDate(result.generatedAt));
+        elements.metaLine.textContent = pieces.join(' | ');
+      };
+
+      const renderTable = () => {
+        if (!state.items.length) {
+          elements.issuesBody.innerHTML = '<tr><td colspan="8" class="empty">No issues found for current filters.</td></tr>';
+          return;
+        }
+
+        const rows = state.items.map((item) => {
+          const data = item.data || {};
+          const reporter = data.reporter || {};
+          const device = data.device || {};
+          const created = formatDate(data.createdAt);
+          const title = toText(data.title);
+          const description = toText(data.description);
+          const reporterName = reporter.name || reporter.username || reporter.email || '-';
+          const deviceText = [device.brand, device.model, device.platform].filter(Boolean).join(' / ') || '-';
+          const status = toText(data.status).toLowerCase();
+          const selectedClass = item.id === state.selectedId ? 'selected' : '';
+
+          return (
+            '<tr class="clickable ' + selectedClass + '" data-id="' + escapeHtml(item.id) + '">' +
+              '<td>' + escapeHtml(created) + '</td>' +
+              '<td><span class="status-pill ' + toStatusClass(status) + '">' + escapeHtml(status) + '</span></td>' +
+              '<td>' + escapeHtml(title) + '</td>' +
+              '<td>' + escapeHtml(description) + '</td>' +
+              '<td>' + escapeHtml(reporterName) + '</td>' +
+              '<td>' + escapeHtml(deviceText) + '</td>' +
+              '<td>' + escapeHtml(toText(data.source)) + '</td>' +
+              '<td>' + escapeHtml(item.id) + '</td>' +
+            '</tr>'
+          );
+        });
+
+        elements.issuesBody.innerHTML = rows.join('');
+      };
+
+      const buildDefinitionList = (objectValue) => {
+        if (!objectValue || typeof objectValue !== 'object') {
+          return '<dl class="kv"><dt>Value</dt><dd>-</dd></dl>';
+        }
+
+        const keys = Object.keys(objectValue);
+        if (!keys.length) {
+          return '<dl class="kv"><dt>Value</dt><dd>-</dd></dl>';
+        }
+
+        const lines = keys
+          .sort()
+          .map((key) => {
+            const value = objectValue[key];
+            let display = '-';
+            if (value && typeof value === 'object') {
+              if (typeof value.iso === 'string' || typeof value.seconds === 'number') {
+                display = formatDate(value);
+              } else {
+                display = JSON.stringify(value);
+              }
+            } else {
+              display = toText(value);
+            }
+            return '<dt>' + escapeHtml(key) + '</dt><dd>' + escapeHtml(display) + '</dd>';
+          });
+
+        return '<dl class="kv">' + lines.join('') + '</dl>';
+      };
+
+      const renderDetail = () => {
+        if (!state.selectedId) {
+          elements.detailPane.innerHTML = '<div class="empty">Select a report row to view full details.</div>';
+          return;
+        }
+
+        const selected = state.items.find((item) => item.id === state.selectedId);
+        if (!selected) {
+          elements.detailPane.innerHTML = '<div class="empty">Selected report is not available in current result.</div>';
+          return;
+        }
+
+        const data = selected.data || {};
+        const header = (
+          '<section class="section">' +
+            '<h3>Issue</h3>' +
+            '<dl class="kv">' +
+              '<dt>ID</dt><dd>' + escapeHtml(toText(selected.id)) + '</dd>' +
+              '<dt>Status</dt><dd>' + escapeHtml(toText(data.status)) + '</dd>' +
+              '<dt>Title</dt><dd>' + escapeHtml(toText(data.title)) + '</dd>' +
+              '<dt>Description</dt><dd>' + escapeHtml(toText(data.description)) + '</dd>' +
+              '<dt>Source</dt><dd>' + escapeHtml(toText(data.source)) + '</dd>' +
+              '<dt>Created At</dt><dd>' + escapeHtml(formatDate(data.createdAt)) + '</dd>' +
+              '<dt>Created At Client</dt><dd>' + escapeHtml(toText(data.createdAtClient)) + '</dd>' +
+              '<dt>Auth UID</dt><dd>' + escapeHtml(toText(data.authUid)) + '</dd>' +
+              '<dt>Path</dt><dd>' + escapeHtml(toText(selected.path)) + '</dd>' +
+            '</dl>' +
+          '</section>'
+        );
+
+        const appSection = '<section class="section"><h3>App</h3>' + buildDefinitionList(data.app) + '</section>';
+        const reporterSection = '<section class="section"><h3>Reporter</h3>' + buildDefinitionList(data.reporter) + '</section>';
+        const deviceSection = '<section class="section"><h3>Device</h3>' + buildDefinitionList(data.device) + '</section>';
+        const rawSection =
+          '<section class="section">' +
+            '<h3>Raw JSON</h3>' +
+            '<pre class="json">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>' +
+          '</section>';
+
+        elements.detailPane.innerHTML = header + appSection + reporterSection + deviceSection + rawSection;
+      };
+
+      const setLoading = (loading) => {
+        state.loading = loading;
+        elements.refreshBtn.disabled = loading;
+        elements.metaLine.textContent = loading ? 'Loading reports...' : elements.metaLine.textContent;
+      };
+
+      const loadIssues = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(buildApiUrl(), { cache: 'no-store' });
+          let payload = null;
+          try {
+            payload = await response.json();
+          } catch (jsonError) {
+            payload = null;
+          }
+
+          if (!response.ok || !payload || payload.ok !== true) {
+            const details = payload && payload.details ? payload.details : ('HTTP ' + response.status);
+            throw new Error(details);
+          }
+
+          state.lastResult = payload;
+          state.items = Array.isArray(payload.items) ? payload.items : [];
+          state.selectedId = state.items.length ? state.items[0].id : null;
+
+          renderStatusRow(payload);
+          renderMeta(payload);
+          renderTable();
+          renderDetail();
+        } catch (error) {
+          state.items = [];
+          state.selectedId = null;
+          renderStatusRow({ count: 0, statusCounts: {} });
+          elements.issuesBody.innerHTML = '<tr><td colspan="8" class="empty error">Failed to load reports: ' + escapeHtml(error.message) + '</td></tr>';
+          elements.detailPane.innerHTML = '<div class="empty">No details available.</div>';
+          elements.metaLine.innerHTML = '<span class="error">Failed to load reports: ' + escapeHtml(error.message) + '</span>';
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      elements.issuesBody.addEventListener('click', (event) => {
+        const row = event.target.closest('tr[data-id]');
+        if (!row) return;
+        state.selectedId = row.getAttribute('data-id');
+        renderTable();
+        renderDetail();
+      });
+
+      elements.refreshBtn.addEventListener('click', () => {
+        loadIssues();
+      });
+
+      elements.resetBtn.addEventListener('click', () => {
+        elements.collectionInput.value = '';
+        elements.statusFilter.value = 'all';
+        elements.sourceFilter.value = '';
+        elements.searchInput.value = '';
+        elements.limitInput.value = '100';
+        loadIssues();
+      });
+
+      [elements.collectionInput, elements.sourceFilter, elements.searchInput].forEach((input) => {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            loadIssues();
+          }
+        });
+      });
+
+      elements.statusFilter.addEventListener('change', loadIssues);
+      elements.limitInput.addEventListener('change', loadIssues);
+
+      loadIssues();
+    })();
+  </script>
+</body>
+</html>
