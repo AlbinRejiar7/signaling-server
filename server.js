@@ -41,6 +41,15 @@ const serveFile = (res, filePath, contentType) => {
   });
 };
 
+const normalizePathname = (pathname) => {
+  if (!pathname || pathname === '/') {
+    return '/';
+  }
+
+  const trimmed = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return trimmed.toLowerCase();
+};
+
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     // If on Zeabur, use the full JSON string from ENV
@@ -104,51 +113,54 @@ const connectionHandler = new ConnectionHandler(db, roomManager, messageRouter, 
 // 3. HTTP Server (for Pings/Health Checks)
 const server = http.createServer((req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = normalizePathname(requestUrl.pathname);
 
-  if (requestUrl.pathname === '/ping') {
+  if (pathname === '/ping') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Server is Awake 🚀');
     return;
   }
 
-  if (requestUrl.pathname === '/.well-known/assetlinks.json') {
+  if (pathname === '/.well-known/assetlinks.json') {
     serveFile(res, ASSET_LINKS_PATH, 'application/json; charset=utf-8');
     return;
   }
 
-  if (requestUrl.pathname === '/.well-known/apple-app-site-association') {
+  if (pathname === '/.well-known/apple-app-site-association') {
     serveFile(res, APPLE_ASSOCIATION_PATH, 'application/json; charset=utf-8');
     return;
   }
 
-  if (requestUrl.pathname === '/' || requestUrl.pathname === '/join') {
+  if (pathname === '/' || pathname === '/join') {
     serveFile(res, HOME_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 
-  if (requestUrl.pathname === '/account-deletion' || requestUrl.pathname === '/account-deletion.html') {
+  if (pathname === '/account-deletion' || pathname === '/account-deletion.html') {
     serveFile(res, ACCOUNT_DELETION_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 
-  if (requestUrl.pathname === '/privacy-policy' || requestUrl.pathname === '/privacy-policy.html') {
+  if (pathname === '/privacy-policy' || pathname === '/privacy-policy.html') {
     serveFile(res, PRIVACY_POLICY_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 
   if (
-    requestUrl.pathname === '/terms-and-conditions' ||
-    requestUrl.pathname === '/terms-and-condition' ||
-    requestUrl.pathname === '/terms-and-conditions.html'
+    pathname === '/terms-and-conditions' ||
+    pathname === '/terms-and-condition' ||
+    pathname === '/terms-and-conditions.html' ||
+    pathname === '/terms-and-condition.html'
   ) {
     serveFile(res, TERMS_AND_CONDITIONS_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
 
-  if (requestUrl.pathname === '/favicon.ico') {
+  if (pathname === '/favicon.ico') {
     res.writeHead(204);
     res.end();
   } else {
+    console.warn(`⚠️ Unknown HTTP route: ${req.method || 'GET'} ${requestUrl.pathname}`);
     res.writeHead(404);
     res.end();
   }
