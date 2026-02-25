@@ -49,10 +49,10 @@ class MessageRouter {
 
         if (targetSocket && targetSocket.readyState === 1) {
           targetSocket.send(
-            JSON.stringify({ 
-              type, 
-              fromUserId: userId, 
-              ...payload 
+            JSON.stringify({
+              type,
+              fromUserId: userId,
+              ...payload
             })
           );
         } else {
