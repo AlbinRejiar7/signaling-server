@@ -23,6 +23,8 @@ const ISSUE_DASHBOARD_FILE_PATH = path.join(__dirname, 'issue-dashboard.html');
 const ACCOUNT_DELETION_FILE_PATH = path.join(__dirname, 'account-deletion.html');
 const PRIVACY_POLICY_FILE_PATH = path.join(__dirname, 'privacy-policy.html');
 const TERMS_AND_CONDITIONS_FILE_PATH = path.join(__dirname, 'terms-and-conditions.html');
+const APP_ADS_FILE_PATH = path.join(__dirname, 'app-ads.txt');
+const ROBOTS_FILE_PATH = path.join(__dirname, 'robots.txt');
 const WELL_KNOWN_DIR = path.join(__dirname, '.well-known');
 const ASSET_LINKS_PATH = path.join(WELL_KNOWN_DIR, 'assetlinks.json');
 const APPLE_ASSOCIATION_PATH = path.join(WELL_KNOWN_DIR, 'apple-app-site-association');
@@ -385,6 +387,16 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/.well-known/apple-app-site-association') {
     serveFile(res, APPLE_ASSOCIATION_PATH, 'application/json; charset=utf-8');
+    return;
+  }
+
+  if (pathname === '/app-ads.txt') {
+    serveFile(res, APP_ADS_FILE_PATH, 'text/plain; charset=utf-8');
+    return;
+  }
+
+  if (pathname === '/robots.txt') {
+    serveFile(res, ROBOTS_FILE_PATH, 'text/plain; charset=utf-8');
     return;
   }
 
