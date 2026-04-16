@@ -185,7 +185,7 @@
       <div class="row">
         <h2>Deep link format</h2>
         <p>Use this link format in your app, invites, and QR codes.</p>
-        <div class="code" id="deepLink">https://synctogether.zeabur.app/join?room=123456</div>
+        <div class="code" id="deepLink">https://signaling-server-9rpb.onrender.com/join?room=123456</div>
       </div>
 
       <div class="actions">
@@ -197,24 +197,52 @@
       <p class="note">If your mobile app is installed and App/Universal Links are configured, this URL opens the app directly.</p>
       <p class="note">
         Legal:
-        <a href="https://albinrejiar7.github.io/signaling-server/privacy-policy/" target="_blank" rel="noopener">Privacy Policy</a> |
-        <a href="https://albinrejiar7.github.io/signaling-server/terms-and-conditions/" target="_blank" rel="noopener">Terms and Conditions</a> |
-        <a href="https://albinrejiar7.github.io/signaling-server/account-deletion/" target="_blank" rel="noopener">Account Deletion</a>
+        <a href="/privacy-policy">Privacy Policy</a> |
+        <a href="/terms-and-conditions">Terms and Conditions</a> |
+        <a href="/account-deletion">Account Deletion</a>
       </p>
     </section>
   </main>
 
   <script>
     (function () {
+      function normalizeRoomCode(value) {
+        const trimmed = typeof value === "string" ? value.trim() : "";
+        if (!trimmed) return "";
+        if (/^\d{1,6}$/.test(trimmed)) {
+          return trimmed.padStart(6, "0");
+        }
+        return trimmed;
+      }
+
       const params = new URLSearchParams(window.location.search);
-      const room = params.get("room");
       const badge = document.getElementById("roomBadge");
       const deepLink = document.getElementById("deepLink");
+      const origin = window.location.origin || "https://signaling-server-9rpb.onrender.com";
+      const room = normalizeRoomCode(
+        params.get("room") || params.get("roomId") || params.get("code")
+      );
+
+      deepLink.textContent = origin + "/join?room=123456";
 
       if (!room) return;
 
       badge.textContent = "Room from URL: " + room;
-      deepLink.textContent = "https://synctogether.zeabur.app/join?room=" + encodeURIComponent(room);
+
+      const canonicalParams = new URLSearchParams(window.location.search);
+      canonicalParams.delete("roomId");
+      canonicalParams.delete("code");
+      canonicalParams.set("room", room);
+      const canonicalSearch = "?" + canonicalParams.toString();
+
+      if (
+        window.location.pathname === "/join" &&
+        window.location.search !== canonicalSearch
+      ) {
+        window.history.replaceState(null, "", "/join" + canonicalSearch);
+      }
+
+      deepLink.textContent = origin + "/join?room=" + encodeURIComponent(room);
     })();
   </script>
 </body>

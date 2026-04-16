@@ -18,6 +18,11 @@ const MAX_WS_PAYLOAD_BYTES = parsePositiveInt(process.env.MAX_WS_PAYLOAD_BYTES, 
 const DEFAULT_ISSUE_FETCH_LIMIT = parsePositiveInt(process.env.ISSUE_DASHBOARD_DEFAULT_LIMIT, 100);
 const MAX_ISSUE_FETCH_LIMIT = 500;
 const ISSUES_COLLECTION_ENV = (process.env.ISSUES_COLLECTION || '').trim();
+const DEFAULT_PUBLIC_HOST = 'signaling-server-9rpb.onrender.com';
+const DEFAULT_BASE_URL = `https://${DEFAULT_PUBLIC_HOST}`;
+const DEFAULT_WS_URL = `wss://${DEFAULT_PUBLIC_HOST}`;
+const DEFAULT_ANDROID_PACKAGE_NAME = 'com.admin.bloc_watch_together';
+const JOIN_ROUTE_PATH = '/join';
 const HOME_FILE_PATH = path.join(__dirname, 'home.html');
 const ISSUE_DASHBOARD_FILE_PATH = path.join(__dirname, 'issue-dashboard.html');
 const ACCOUNT_DELETION_FILE_PATH = path.join(__dirname, 'account-deletion.html');
@@ -59,6 +64,15 @@ const normalizePathname = (pathname) => {
   return trimmed.toLowerCase();
 };
 
+const parseJsonFile = (filePath, fallback) => {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    console.warn(`⚠️ Failed to parse ${path.basename(filePath)}: ${error.message}`);
+    return fallback;
+  }
+};
+
 const parseBoundedInt = (value, fallback, min, max) => {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return fallback;
@@ -76,6 +90,120 @@ const sanitizeCollectionName = (value) => {
   const token = sanitizeToken(value, 120);
   if (!token) return '';
   return token.replace(/[^A-Za-z0-9_-]/g, '');
+};
+
+const parseStringList = (value) => {
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item || '').trim()).filter(Boolean);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to parse list env value: ${error.message}`);
+    }
+  }
+
+  return trimmed
+    .split(/[\r\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const uniqueStrings = (values) => Array.from(new Set(values.filter(Boolean)));
+
+const normalizeUrlOrigin = (value, allowedProtocols = ['http:', 'https:']) => {
+  try {
+    const parsed = new URL(value);
+    if (!allowedProtocols.includes(parsed.protocol)) return '';
+    return parsed.origin;
+  } catch (error) {
+    return '';
+  }
+};
+
+const normalizeSocketUrl = (value, fallback) => {
+  try {
+    const parsed = new URL(value);
+    if (!['ws:', 'wss:'].includes(parsed.protocol)) {
+      throw new Error('Invalid websocket protocol');
+    }
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const normalizeRoomCode = (value) => {
+  const token = sanitizeToken(value, 128);
+  if (!token) return '';
+  if (/^\d{1,6}$/.test(token)) {
+    return token.padStart(6, '0');
+  }
+  return token;
+};
+
+const extractJoinRoomCode = (searchParams) => {
+  for (const key of ['room', 'roomId', 'code']) {
+    const normalized = normalizeRoomCode(searchParams.get(key));
+    if (normalized) {
+      return {
+        key,
+        value: normalized
+      };
+    }
+  }
+
+  return {
+    key: '',
+    value: ''
+  };
+};
+
+const buildCanonicalJoinLocation = (searchParams, roomCode) => {
+  const params = new URLSearchParams(searchParams);
+  params.delete('roomId');
+  params.delete('code');
+
+  if (roomCode) {
+    params.set('room', roomCode);
+  } else {
+    params.delete('room');
+  }
+
+  const query = params.toString();
+  return query ? `${JOIN_ROUTE_PATH}?${query}` : JOIN_ROUTE_PATH;
+};
+
+const getJoinRedirectLocation = (pathname, searchParams) => {
+  if (pathname !== '/' && pathname !== JOIN_ROUTE_PATH) {
+    return '';
+  }
+
+  const { value: roomCode } = extractJoinRoomCode(searchParams);
+  if (!roomCode) return '';
+
+  const canonicalLocation = buildCanonicalJoinLocation(searchParams, roomCode);
+  const currentLocation = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '');
+
+  if (pathname !== JOIN_ROUTE_PATH) {
+    return canonicalLocation;
+  }
+
+  return currentLocation === canonicalLocation ? '' : canonicalLocation;
+};
+
+const sendRedirect = (res, location) => {
+  res.writeHead(302, {
+    Location: location,
+    'Cache-Control': 'no-store'
+  });
+  res.end();
 };
 
 const toMillis = (value) => {
@@ -144,22 +272,135 @@ const normalizeFirestoreValue = (value) => {
   return value;
 };
 
-const sendJson = (res, statusCode, payload) => {
-  const body = JSON.stringify(payload);
+const sendJson = (res, statusCode, payload, options = {}) => {
+  const body = JSON.stringify(payload, null, options.pretty ? 2 : 0);
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store'
+    'Cache-Control': options.cacheControl || 'no-store'
   });
   res.end(body);
 };
 
+const DEFAULT_ASSET_LINKS_PAYLOAD = parseJsonFile(ASSET_LINKS_PATH, []);
+const DEFAULT_APPLE_ASSOCIATION_PAYLOAD = parseJsonFile(APPLE_ASSOCIATION_PATH, {
+  applinks: {
+    apps: [],
+    details: []
+  }
+});
+
+const DEFAULT_ASSET_LINKS_ENTRY = Array.isArray(DEFAULT_ASSET_LINKS_PAYLOAD)
+  ? DEFAULT_ASSET_LINKS_PAYLOAD[0] || {}
+  : {};
+const DEFAULT_APPLE_APPLINKS = DEFAULT_APPLE_ASSOCIATION_PAYLOAD?.applinks || {};
+const DEFAULT_APPLE_DETAILS = Array.isArray(DEFAULT_APPLE_APPLINKS.details)
+  ? DEFAULT_APPLE_APPLINKS.details
+  : [];
+const DEFAULT_APPLE_DETAIL = DEFAULT_APPLE_DETAILS[0] || {};
+
+const CANONICAL_BASE_URL = normalizeUrlOrigin(process.env.PUBLIC_BASE_URL || DEFAULT_BASE_URL) || DEFAULT_BASE_URL;
+const CANONICAL_WS_URL = normalizeSocketUrl(process.env.PUBLIC_WS_URL || DEFAULT_WS_URL, DEFAULT_WS_URL);
+const CANONICAL_HOSTNAME = (() => {
+  try {
+    return new URL(CANONICAL_BASE_URL).hostname;
+  } catch (error) {
+    return DEFAULT_PUBLIC_HOST;
+  }
+})();
+const ALLOWED_WS_ORIGINS = new Set(
+  uniqueStrings(
+    (
+      parseStringList(process.env.ALLOWED_ORIGINS).map((value) => normalizeUrlOrigin(value)) || []
+    ).concat([
+      CANONICAL_BASE_URL,
+      `http://localhost:${PORT}`,
+      `http://127.0.0.1:${PORT}`,
+      'http://localhost:3000',
+      'http://127.0.0.1:3000'
+    ])
+  )
+);
+const ANDROID_PACKAGE_NAME =
+  sanitizeToken(process.env.ANDROID_PACKAGE_NAME, 200) ||
+  sanitizeToken(DEFAULT_ASSET_LINKS_ENTRY?.target?.package_name, 200) ||
+  DEFAULT_ANDROID_PACKAGE_NAME;
+const ANDROID_SHA256_FINGERPRINTS = (() => {
+  const envFingerprints = uniqueStrings(
+    parseStringList(process.env.ANDROID_SHA256_FINGERPRINTS).concat(
+      sanitizeToken(process.env.ANDROID_SHA256_FINGERPRINT, 200) || ''
+    )
+  );
+  const defaultFingerprints = Array.isArray(DEFAULT_ASSET_LINKS_ENTRY?.target?.sha256_cert_fingerprints)
+    ? DEFAULT_ASSET_LINKS_ENTRY.target.sha256_cert_fingerprints.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  return envFingerprints.length ? envFingerprints : defaultFingerprints;
+})();
+const IOS_BUNDLE_ID = sanitizeToken(process.env.IOS_BUNDLE_ID, 200);
+const APPLE_TEAM_ID = sanitizeToken(process.env.APPLE_TEAM_ID, 64).replace(/[^A-Za-z0-9]/g, '');
+const APPLE_APP_IDS = (() => {
+  const envAppIds = uniqueStrings(parseStringList(process.env.APPLE_APP_IDS).map((value) => sanitizeToken(value, 255)));
+  if (envAppIds.length) {
+    return envAppIds;
+  }
+
+  if (APPLE_TEAM_ID && IOS_BUNDLE_ID) {
+    return [`${APPLE_TEAM_ID}.${IOS_BUNDLE_ID}`];
+  }
+
+  const defaultAppIds = DEFAULT_APPLE_DETAILS
+    .map((detail) => sanitizeToken(detail?.appID, 255))
+    .filter((appId) => appId && !/^TEAMID\./i.test(appId));
+
+  return uniqueStrings(defaultAppIds);
+})();
+const APPLE_APP_LINK_PATHS = Array.isArray(DEFAULT_APPLE_DETAIL?.paths) && DEFAULT_APPLE_DETAIL.paths.length
+  ? DEFAULT_APPLE_DETAIL.paths
+  : ['/join', '/join/*'];
+
+const buildAssetLinksPayload = () => {
+  const relations = Array.isArray(DEFAULT_ASSET_LINKS_ENTRY?.relation) && DEFAULT_ASSET_LINKS_ENTRY.relation.length
+    ? DEFAULT_ASSET_LINKS_ENTRY.relation
+    : ['delegate_permission/common.handle_all_urls'];
+
+  return [
+    {
+      relation: relations,
+      target: {
+        namespace: 'android_app',
+        package_name: ANDROID_PACKAGE_NAME,
+        sha256_cert_fingerprints: ANDROID_SHA256_FINGERPRINTS
+      }
+    }
+  ];
+};
+
+const buildAppleAssociationPayload = () => ({
+  applinks: {
+    apps: Array.isArray(DEFAULT_APPLE_APPLINKS.apps) ? DEFAULT_APPLE_APPLINKS.apps : [],
+    details: APPLE_APP_IDS.map((appID) => ({
+      appID,
+      paths: APPLE_APP_LINK_PATHS
+    }))
+  }
+});
+
+const isAllowedWebSocketOrigin = (origin) => {
+  if (!origin || origin === 'null') {
+    return true;
+  }
+
+  const normalizedOrigin = normalizeUrlOrigin(origin);
+  return Boolean(normalizedOrigin && ALLOWED_WS_ORIGINS.has(normalizedOrigin));
+};
+
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    // If on Zeabur, use the full JSON string from ENV
+    // Use the full JSON string from the environment when provided.
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     console.log("☁️ Using FIREBASE_SERVICE_ACCOUNT from Environment Variables");
   } else {
-    // If on Local, use your file
+    // Fall back to the local credentials file for local development.
     serviceAccount = require("./serviceAccountKey.json");
     console.log("🛠️ Using local serviceAccountKey.json");
   }
@@ -380,13 +621,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const joinRedirectLocation = getJoinRedirectLocation(pathname, requestUrl.searchParams);
+  if (joinRedirectLocation) {
+    sendRedirect(res, joinRedirectLocation);
+    return;
+  }
+
   if (pathname === '/.well-known/assetlinks.json') {
-    serveFile(res, ASSET_LINKS_PATH, 'application/json; charset=utf-8');
+    sendJson(res, 200, buildAssetLinksPayload(), {
+      cacheControl: 'public, max-age=300',
+      pretty: true
+    });
     return;
   }
 
   if (pathname === '/.well-known/apple-app-site-association') {
-    serveFile(res, APPLE_ASSOCIATION_PATH, 'application/json; charset=utf-8');
+    sendJson(res, 200, buildAppleAssociationPayload(), {
+      cacheControl: 'public, max-age=300',
+      pretty: true
+    });
     return;
   }
 
@@ -400,7 +653,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (pathname === '/' || pathname === '/join') {
+  if (pathname === '/' || pathname === JOIN_ROUTE_PATH) {
     serveFile(res, HOME_FILE_PATH, 'text/html; charset=utf-8');
     return;
   }
@@ -444,11 +697,26 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({
   server,
   maxPayload: MAX_WS_PAYLOAD_BYTES,
-  perMessageDeflate: false
+  perMessageDeflate: false,
+  verifyClient: ({ origin, req }, done) => {
+    if (isAllowedWebSocketOrigin(origin)) {
+      done(true);
+      return;
+    }
+
+    console.warn(`⚠️ Blocked WebSocket origin ${origin || '<none>'} for ${req.url || '/'}`);
+    done(false, 403, 'Forbidden');
+  }
 });
 
 console.log('====================================');
 console.log(`🚀 Signaling Server running on port ${PORT}`);
+console.log(`🌐 Canonical web host: ${CANONICAL_BASE_URL}`);
+console.log(`🔌 Canonical websocket host: ${CANONICAL_WS_URL}`);
+console.log(`✅ Android App Links host: ${CANONICAL_HOSTNAME}`);
+if (!APPLE_APP_IDS.length) {
+  console.warn('⚠️ Apple universal links will serve no appIDs until APPLE_TEAM_ID and IOS_BUNDLE_ID are set.');
+}
 console.log('====================================');
 
 wss.on('connection', (socket, req) => {
